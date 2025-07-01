@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Zap, Globe, Users, Clock, RotateCcw, Sparkles } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Zap, Globe, Users, Clock, RotateCcw, Sparkles, Volume2, VolumeX } from 'lucide-react'
 
 interface ChaosEvent {
   id: number
@@ -48,6 +48,70 @@ function App() {
   const [isAnimating, setIsAnimating] = useState(false)
   const [globalChaosScore, setGlobalChaosScore] = useState(42847)
   const [activeUsers, setActiveUsers] = useState(1337)
+  const [isMuted, setIsMuted] = useState(false)
+  
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioBufferRef = useRef<AudioBuffer | null>(null)
+
+  // Initialize audio context and create sound
+  useEffect(() => {
+    const initAudio = async () => {
+      try {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+        
+        // Create a synthetic sound effect
+        const sampleRate = audioContextRef.current.sampleRate
+        const duration = 0.3 // 300ms
+        const frameCount = sampleRate * duration
+        const arrayBuffer = audioContextRef.current.createBuffer(2, frameCount, sampleRate)
+        
+        // Generate a satisfying "zap" sound
+        for (let channel = 0; channel < arrayBuffer.numberOfChannels; channel++) {
+          const channelData = arrayBuffer.getChannelData(channel)
+          for (let i = 0; i < frameCount; i++) {
+            const t = i / sampleRate
+            // Create a zap sound with frequency sweep and decay
+            const frequency = 800 - (t * 600) // Sweep from 800Hz to 200Hz
+            const envelope = Math.exp(-t * 8) // Exponential decay
+            const noise = (Math.random() - 0.5) * 0.1 // Add some noise
+            channelData[i] = Math.sin(2 * Math.PI * frequency * t) * envelope * 0.3 + noise
+          }
+        }
+        
+        audioBufferRef.current = arrayBuffer
+      } catch (error) {
+        console.log('Audio initialization failed:', error)
+      }
+    }
+
+    initAudio()
+  }, [])
+
+  const playSound = () => {
+    if (isMuted || !audioContextRef.current || !audioBufferRef.current) return
+    
+    try {
+      // Resume audio context if suspended (required by some browsers)
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume()
+      }
+      
+      const source = audioContextRef.current.createBufferSource()
+      const gainNode = audioContextRef.current.createGain()
+      
+      source.buffer = audioBufferRef.current
+      source.connect(gainNode)
+      gainNode.connect(audioContextRef.current.destination)
+      
+      // Add some variation to the volume based on chaos level
+      const volume = 0.3 + (chaosLevel / 50) * 0.4
+      gainNode.gain.setValueAtTime(volume, audioContextRef.current.currentTime)
+      
+      source.start()
+    } catch (error) {
+      console.log('Sound playback failed:', error)
+    }
+  }
 
   const getRandomEvent = () => {
     let availableEvents = chaosEvents
@@ -62,6 +126,7 @@ function App() {
   }
 
   const handleChaosClick = () => {
+    playSound()
     setIsAnimating(true)
     setTotalClicks(prev => prev + 1)
     setChaosLevel(prev => Math.min(prev + 1, 50))
@@ -85,6 +150,10 @@ function App() {
     setChaosLevel(0)
     setTotalClicks(0)
     setRecentEvents([])
+  }
+
+  const toggleMute = () => {
+    setIsMuted(prev => !prev)
   }
 
   useEffect(() => {
@@ -132,11 +201,26 @@ function App() {
       </div>
 
       <div className="relative z-10 container mx-auto px-4 py-8">
-        {/* Header */}
+        {/* Header with Mute Button */}
         <div className="text-center mb-12">
-          <div className="flex items-center justify-center mb-4">
+          <div className="flex items-center justify-center mb-4 relative">
             <Zap className="w-12 h-12 text-yellow-400 mr-3" />
             <h1 className="text-5xl font-bold text-white">The Chaos Summoner</h1>
+            
+            {/* Mute Button */}
+            <button
+              onClick={toggleMute}
+              className={`
+                absolute right-0 top-0 p-3 rounded-full transition-all duration-200
+                ${isMuted 
+                  ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
+                  : 'bg-white/10 text-white hover:bg-white/20'
+                }
+              `}
+              title={isMuted ? 'Unmute sounds' : 'Mute sounds'}
+            >
+              {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+            </button>
           </div>
           <p className="text-xl text-gray-300 max-w-2xl mx-auto">
             Unleash harmless chaos across the world with each button press. Watch as reality bends to your will!
@@ -196,6 +280,9 @@ function App() {
             <span className="relative z-10 flex items-center">
               <Zap className="w-8 h-8 mr-3" />
               SUMMON CHAOS
+              {!isMuted && (
+                <Volume2 className="w-5 h-5 ml-3 opacity-60" />
+              )}
             </span>
             {isAnimating && (
               <div className="absolute inset-0 bg-white/20 animate-ping rounded-full"></div>
@@ -259,6 +346,7 @@ function App() {
                 <p>• Click the button to cause harmless chaos events worldwide</p>
                 <p>• Higher chaos levels unlock more intense events</p>
                 <p>• Watch your global impact grow with each summon</p>
+                <p>• Use the mute button to toggle sound effects</p>
                 <p>• Reset anytime to start fresh</p>
               </div>
             </div>
